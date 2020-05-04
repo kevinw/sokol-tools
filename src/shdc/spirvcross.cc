@@ -453,6 +453,108 @@ spirvcross_t spirvcross_t::translate(const input_t& inp, const spirv_t& spirv, s
     return spv_cross;
 }
 
+// bare binary format
+static void write_string(FILE* stream, const std::string& str) {
+    assert(str.size() < UINT16_MAX);
+    uint16_t sz = (uint16_t)str.size();
+
+    // write the length of the string as a u16
+    fwrite(&sz, sizeof(uint16_t), 1, stream);
+
+    // write the string's bytes
+    fwrite(str.data(), str.size(), 1, stream);
+}
+
+static void write_byte(FILE* stream, unsigned char byte) {
+    fwrite(&byte, sizeof(unsigned char), 1, stream);
+}
+
+static void write_u16(FILE* stream, uint16_t val) {
+    fwrite(&val, sizeof(uint16_t), 1, stream);
+}
+
+static void write_attr(FILE* stream, const attr_t& attr) {
+    write_string(stream, attr.name);
+    write_u16(stream, attr.slot);
+    write_string(stream, attr.sem_name);
+    write_byte(stream, attr.sem_index);
+}
+
+static void write_uniform_block(FILE* stream, const uniform_block_t& ub) {
+    write_u16(stream, ub.uniforms.size());
+    for (const uniform_t& uniform: ub.uniforms) {
+        write_string(stream, uniform.name);
+        write_byte(stream, uniform.type);
+        write_u16(stream, uniform.array_count);
+        write_u16(stream, uniform.offset);
+    }
+}
+
+static void write_image(FILE* stream, const image_t& img) {
+    write_string(stream, img.name);
+    write_u16(stream, img.slot);
+    write_byte(stream, img.type);
+    write_byte(stream, img.base_type);
+}
+
+static void write_chars(FILE* stream, const char* chars) {
+    fwrite(chars, strlen(chars), 1, stream);
+}
+
+static const uint16_t BINARY_FORMAT_VERSION = 1;
+
+void spirvcross_t::write_binary_reflection_info(FILE* stream, const spirvcross_refl_t& refl) const {
+    write_chars(stream, "SHDC"); // magic header
+    write_u16(stream, BINARY_FORMAT_VERSION);
+
+    write_byte(stream, (unsigned char)refl.stage); // stage_t as a byte
+    write_string(stream, refl.entry_point); // entry point as a (u16 len, string bytes) pair
+
+    // inputs
+    int count = 0;
+    for (const attr_t& attr: refl.inputs) {
+        if (attr.slot >= 0) {
+            ++count;  
+        }
+    }
+
+    write_u16(stream, count); // input count as u16
+    for (const attr_t& attr: refl.inputs) {
+        if (attr.slot >= 0) {
+            write_attr(stream, attr);
+        }
+    }
+    
+    // outputs
+    count = 0;
+    for (const attr_t& attr: refl.outputs) {
+        if (attr.slot >= 0) {
+            ++count;
+        }
+    }
+    
+    write_u16(stream, count); // output count as u16
+    for (const attr_t& attr: refl.outputs) {
+        if (attr.slot >= 0) {
+            write_attr(stream, attr);
+        }
+    }
+
+    // uniform blocks
+    write_u16(stream, refl.uniform_blocks.size());
+    for (const uniform_block_t& ub: refl.uniform_blocks) {
+        write_uniform_block(stream, ub);
+    }
+
+    // images
+    write_u16(stream, refl.images.size());
+    for (const image_t& img: refl.images) {
+        write_image(stream, img);
+    }
+}
+
+//
+
 void spirvcross_t::write_reflection_info(FILE* stream, const spirvcross_source_t& source, const std::string& indent) const {
     fmt::print(stream, "{}stage: {}\n", indent, stage_t::to_str(source.refl.stage));
     fmt::print(stream, "{}entry: {}\n", indent, source.refl.entry_point);

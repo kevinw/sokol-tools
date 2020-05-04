@@ -61,7 +61,7 @@ static errmsg_t write_meta(const std::string& file_path,
         return errmsg_t::error(file_path, 0, fmt::format("failed to open output file '{}'", file_path));
     }
 
-    spirvcross.write_reflection_info(f, src, "");
+    spirvcross.write_binary_reflection_info(f, src.refl);
 
     fclose(f);
     return errmsg_t();
